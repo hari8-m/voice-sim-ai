@@ -1,0 +1,1 @@
+This project demonstrates a real-time voice-based AI assistant using speech recognition and text-to-speech.
