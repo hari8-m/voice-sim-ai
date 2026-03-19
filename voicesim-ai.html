@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>VoiceSim AI – Voice Scenario Learning</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet"/>
+
+<style>
+/* ─── DESIGN TOKENS ─────────────────────────────────────────── */
+:root {
+  --bg:          #050810;
+  --surface:     #0b1120;
+  --surface2:    #111a2e;
+  --border:      rgba(99,179,237,0.12);
+  --accent:      #38bdf8;
+  --accent2:     #818cf8;
+  --accent3:     #34d399;
+  --danger:      #f87171;
+  --warn:        #fb923c;
+  --text:        #e2e8f0;
+  --muted:       #64748b;
+  --glow:        rgba(56,189,248,0.18);
+  --glow2:       rgba(129,140,248,0.15);
+  --font-head:   'Syne', sans-serif;
+  --font-mono:   'DM Mono', monospace;
+  --font-serif:  'Instrument Serif', serif;
+  --radius:      14px;
+  --radius-lg:   22px;
+}
+
+/* ─── RESET & BASE ──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-head);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ─── ANIMATED BACKGROUND GRID ─────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(56,189,248,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: gridDrift 20s linear infinite;
+}
+@keyframes gridDrift { to { background-position: 48px 48px; } }
+
+/* ─── NOISE GRAIN ───────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ─── GLOW ORBS ─────────────────────────────────────────────── */
+.orb {
+  position: fixed; border-radius: 50%;
+  pointer-events: none; z-index: 0; filter: blur(80px);
+}
+.orb1 { width: 500px; height: 500px; top: -120px; left: -100px;
+  background: radial-gradient(circle, rgba(56,189,248,0.12) 0%, transparent 70%); }
+.orb2 { width: 600px; height: 600px; bottom: -200px; right: -150px;
+  background: radial-gradient(circle, rgba(129,140,248,0.1) 0%, transparent 70%);
+  animation: orbFloat 8s ease-in-out infinite; }
+.orb3 { width: 300px; height: 300px; top: 40%; left: 40%;
+  background: radial-gradient(circle, rgba(52,211,153,0.06) 0%, transparent 70%);
+  animation: orbFloat 12s ease-in-out infinite reverse; }
+@keyframes orbFloat {
+  0%,100% { transform: translateY(0px); }
+  50% { transform: translateY(-30px); }
+}
+
+/* ─── LAYOUT ────────────────────────────────────────────────── */
+.wrapper { position: relative; z-index: 1; min-height: 100vh;
+  display: flex; flex-direction: column; }
+
+/* ─── HEADER ────────────────────────────────────────────────── */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 40px;
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  background: rgba(5,8,16,0.7);
+  position: sticky; top: 0; z-index: 100;
+}
+.logo-group { display: flex; align-items: center; gap: 12px; }
+.logo-icon {
+  width: 38px; height: 38px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; box-shadow: 0 0 20px var(--glow);
+}
+.logo-text { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.03em; }
+.logo-text span { color: var(--accent); }
+
+.status-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; border-radius: 99px;
+  background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2);
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent3);
+}
+.status-dot { width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent3); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity:1; box-shadow: 0 0 0 0 rgba(52,211,153,0.4); }
+  50% { opacity:0.8; box-shadow: 0 0 0 6px rgba(52,211,153,0); } }
+
+.header-nav { display: flex; align-items: center; gap: 24px; }
+.nav-badge {
+  font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted);
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.2s;
+}
+.nav-badge:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── HERO ──────────────────────────────────────────────────── */
+.hero {
+  text-align: center; padding: 64px 20px 32px;
+  animation: fadeUp 0.8s ease both;
+}
+@keyframes fadeUp { from { opacity:0; transform: translateY(24px); } to { opacity:1; transform: none; } }
+.hero-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 16px; border-radius: 99px;
+  border: 1px solid rgba(56,189,248,0.25);
+  background: rgba(56,189,248,0.06); margin-bottom: 24px;
+}
+.hero h1 {
+  font-size: clamp(2.2rem, 5vw, 4rem);
+  font-weight: 800; line-height: 1.05;
+  letter-spacing: -0.04em; margin-bottom: 16px;
+}
+.hero h1 em { font-family: var(--font-serif); font-style: italic;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero p {
+  max-width: 520px; margin: 0 auto; color: var(--muted);
+  font-size: 1rem; line-height: 1.7; font-family: var(--font-mono);
+}
+
+/* ─── LANGUAGE SELECTOR ─────────────────────────────────────── */
+.lang-strip {
+  display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;
+  padding: 24px 20px 0;
+  animation: fadeUp 0.9s ease both 0.1s;
+}
+.lang-chip {
+  padding: 7px 16px; border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface); font-family: var(--font-mono);
+  font-size: 0.75rem; color: var(--muted); cursor: pointer;
+  transition: all 0.2s ease;
+}
+.lang-chip:hover { border-color: var(--accent); color: var(--accent); }
+.lang-chip.active {
+  border-color: var(--accent); color: var(--accent);
+  background: rgba(56,189,248,0.08);
+  box-shadow: 0 0 12px rgba(56,189,248,0.15);
+}
+
+/* ─── SCENARIO CARDS ─────────────────────────────────────────── */
+.scenarios-section {
+  padding: 32px 40px; animation: fadeUp 1s ease both 0.15s;
+}
+.section-label {
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;
+}
+.scenarios-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
+}
+.scenario-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 16px;
+  cursor: pointer; transition: all 0.25s ease;
+  position: relative; overflow: hidden;
+}
+.scenario-card::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, var(--card-color, var(--accent)) 0%, transparent 80%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.scenario-card:hover::before { opacity: 0.06; }
+.scenario-card:hover {
+  border-color: var(--card-color, var(--accent));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3), 0 0 20px color-mix(in srgb, var(--card-color, var(--accent)) 20%, transparent);
+}
+.scenario-card.active {
+  border-color: var(--card-color, var(--accent));
+  background: color-mix(in srgb, var(--card-color, var(--accent)) 8%, var(--surface));
+  box-shadow: 0 0 25px color-mix(in srgb, var(--card-color, var(--accent)) 25%, transparent);
+}
+.scenario-card.active::before { opacity: 0.08; }
+.card-icon { font-size: 1.8rem; margin-bottom: 10px; display: block; }
+.card-title {
+  font-size: 0.88rem; font-weight: 700; margin-bottom: 4px;
+  color: var(--text);
+}
+.card-desc { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted); line-height: 1.5; }
+.card-badge {
+  position: absolute; top: 10px; right: 10px;
+  font-family: var(--font-mono); font-size: 0.6rem;
+  padding: 2px 7px; border-radius: 99px;
+  background: color-mix(in srgb, var(--card-color, var(--accent)) 15%, transparent);
+  color: var(--card-color, var(--accent));
+  border: 1px solid color-mix(in srgb, var(--card-color, var(--accent)) 30%, transparent);
+}
+
+/* ─── MAIN CONSOLE ──────────────────────────────────────────── */
+.console-area {
+  flex: 1; padding: 0 40px 40px;
+  display: grid; grid-template-columns: 1fr 340px; gap: 20px;
+  animation: fadeUp 1s ease both 0.2s;
+}
+.console-main { display: flex; flex-direction: column; gap: 16px; }
+
+/* CONVERSATION PANEL */
+.chat-panel {
+  flex: 1; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+  display: flex; flex-direction: column; min-height: 320px;
+}
+.chat-header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface2);
+}
+.chat-header-left { display: flex; align-items: center; gap: 10px; }
+.chat-title { font-size: 0.82rem; font-weight: 700; color: var(--text); }
+.chat-subtitle { font-family: var(--font-mono); font-size: 0.66rem; color: var(--muted); }
+.chat-actions { display: flex; gap: 8px; }
+.icon-btn {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: transparent; border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; cursor: pointer; color: var(--muted);
+  transition: all 0.2s;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.chat-messages {
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: flex; flex-direction: column; gap: 16px;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+}
+.message {
+  display: flex; gap: 10px; align-items: flex-start;
+  animation: msgIn 0.3s ease both;
+}
+@keyframes msgIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: none; } }
+.message.user { flex-direction: row-reverse; }
+.avatar {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 0.85rem;
+}
+.avatar.ai { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+.avatar.user { background: linear-gradient(135deg, var(--accent3), var(--accent)); }
+.bubble {
+  max-width: 75%; padding: 10px 14px; border-radius: 12px;
+  font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.6;
+}
+.message.ai .bubble {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  border-top-left-radius: 3px;
+}
+.message.user .bubble {
+  background: linear-gradient(135deg, rgba(56,189,248,0.15), rgba(129,140,248,0.15));
+  border: 1px solid rgba(56,189,248,0.2); color: var(--text);
+  border-top-right-radius: 3px;
+}
+.bubble-meta { font-size: 0.6rem; color: var(--muted); margin-top: 4px; }
+
+/* WAVEFORM VISUALIZER */
+.waveform-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+.waveform-title { font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.1em; align-self: flex-start; }
+.waveform-canvas-wrap {
+  width: 100%; height: 80px; position: relative;
+  border-radius: 10px; overflow: hidden;
+  background: var(--surface2); border: 1px solid var(--border);
+}
+canvas#waveform { width: 100%; height: 100%; }
+
+/* MIC BUTTON */
+.mic-section {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.mic-ring {
+  position: relative; width: 100px; height: 100px;
+}
+.mic-ring::before, .mic-ring::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid rgba(56,189,248,0.2);
+  animation: ringPulse 2.5s ease-in-out infinite;
+}
+.mic-ring::after { animation-delay: 1.2s; }
+.mic-btn {
+  position: absolute; inset: 14px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; cursor: pointer; font-size: 1.6rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.25s ease;
+  box-shadow: 0 0 30px var(--glow), 0 0 60px rgba(129,140,248,0.1);
+}
+.mic-btn:hover { transform: scale(1.06); box-shadow: 0 0 40px var(--glow), 0 0 80px rgba(129,140,248,0.15); }
+.mic-btn.listening {
+  background: linear-gradient(135deg, var(--danger), #fb923c);
+  box-shadow: 0 0 30px rgba(248,113,113,0.3), 0 0 60px rgba(251,146,60,0.15);
+  animation: micPulse 1s ease-in-out infinite;
+}
+@keyframes micPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes ringPulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.mic-label { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+.mic-label span { color: var(--accent); }
+
+/* SPEAK BAR */
+.speak-bar {
+  display: flex; gap: 10px; align-items: center;
+}
+.speak-input {
+  flex: 1; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 16px;
+  font-family: var(--font-mono); font-size: 0.8rem; color: var(--text);
+  outline: none; transition: border-color 0.2s;
+}
+.speak-input::placeholder { color: var(--muted); }
+.speak-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56,189,248,0.08); }
+.send-btn {
+  padding: 12px 20px; border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none; color: #fff; font-family: var(--font-head);
+  font-weight: 700; font-size: 0.82rem; cursor: pointer;
+  transition: all 0.2s; white-space: nowrap;
+}
+.send-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--glow); }
+
+/* ─── SIDEBAR ────────────────────────────────────────────────── */
+.sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+.info-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px;
+}
+.info-card-title {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--muted); margin-bottom: 16px;
+  font-family: var(--font-mono);
+}
+
+/* METRICS */
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.metric {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px;
+}
+.metric-val {
+  font-size: 1.5rem; font-weight: 800; line-height: 1;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.metric-key { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); margin-top: 4px; }
+
+/* TIPS */
+.tip-list { display: flex; flex-direction: column; gap: 10px; }
+.tip-item {
+  display: flex; gap: 10px; padding: 10px 12px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px;
+}
+.tip-icon { font-size: 1rem; flex-shrink: 0; }
+.tip-text { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); line-height: 1.5; }
+.tip-text strong { color: var(--text); font-weight: 500; }
+
+/* VOICE CONTROLS */
+.voice-controls { display: flex; flex-direction: column; gap: 10px; }
+.vc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.vc-label { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+.vc-select {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 10px;
+  font-family: var(--font-mono); font-size: 0.72rem; color: var(--text);
+  outline: none; cursor: pointer;
+}
+.vc-select:focus { border-color: var(--accent); }
+.vc-slider { -webkit-appearance: none; width: 100px; height: 3px;
+  border-radius: 99px; background: var(--border); outline: none; cursor: pointer; }
+.vc-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--accent); cursor: pointer; box-shadow: 0 0 8px var(--glow);
+}
+
+/* ─── FOOTER ─────────────────────────────────────────────────── */
+footer {
+  text-align: center; padding: 20px;
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+footer span { color: var(--accent); }
+
+/* ─── LOADING DOTS ─────────────────────────────────────────── */
+.typing-indicator { display: flex; gap: 4px; align-items: center; }
+.typing-indicator span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); display: inline-block;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce { 0%,80%,100% { transform: scale(0.8); opacity:0.5; }
+  40% { transform: scale(1.2); opacity: 1; } }
+
+/* ─── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .console-area { grid-template-columns: 1fr; }
+  .sidebar { flex-direction: row; flex-wrap: wrap; }
+  .sidebar > * { flex: 1; min-width: 260px; }
+  header { padding: 16px 20px; }
+  .scenarios-section { padding: 24px 20px; }
+  .console-area { padding: 0 20px 32px; }
+}
+
+/* ─── SCROLL ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+</style>
+</head>
+<body>
+
+<!-- AMBIENT ORBS -->
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="wrapper">
+
+<!-- ─── HEADER ─────────────────────────────────────────────── -->
+<header>
+  <div class="logo-group">
+    <div class="logo-icon">🎙️</div>
+    <div class="logo-text">Voice<span>Sim</span> AI</div>
+  </div>
+  <div class="status-pill">
+    <span class="status-dot"></span>
+    System Operational
+  </div>
+  <nav class="header-nav">
+    <div class="nav-badge">Dashboard</div>
+    <div class="nav-badge">History</div>
+    <div class="nav-badge">Settings</div>
+    <div class="nav-badge" style="border-color:rgba(56,189,248,0.3);color:var(--accent)">Murf Hackathon '25</div>
+  </nav>
+</header>
+
+<!-- ─── HERO ──────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-label">✦ Real-Time Voice Learning Assistant</div>
+  <h1>Practice Real-World Scenarios<br/>with <em>AI-Powered</em> Voice</h1>
+  <p>Speak. Listen. Learn. Build confidence through immersive multilingual voice conversations — anytime, anywhere.</p>
+</section>
+
+<!-- ─── LANGUAGE SELECTOR ──────────────────────────────────── -->
+<div class="lang-strip" id="langStrip">
+  <div class="lang-chip active" data-lang="en-US">🇺🇸 English</div>
+  <div class="lang-chip" data-lang="hi-IN">🇮🇳 Hindi</div>
+  <div class="lang-chip" data-lang="ta-IN">🇮🇳 Tamil</div>
+  <div class="lang-chip" data-lang="fr-FR">🇫🇷 French</div>
+  <div class="lang-chip" data-lang="de-DE">🇩🇪 German</div>
+  <div class="lang-chip" data-lang="es-ES">🇪🇸 Spanish</div>
+  <div class="lang-chip" data-lang="ja-JP">🇯🇵 Japanese</div>
+  <div class="lang-chip" data-lang="zh-CN">🇨🇳 Chinese</div>
+</div>
+
+<!-- ─── SCENARIO CARDS ──────────────────────────────────────── -->
+<section class="scenarios-section">
+  <div class="section-label">// Choose your practice scenario</div>
+  <div class="scenarios-grid" id="scenariosGrid">
+
+    <div class="scenario-card active" data-scenario="interview" style="--card-color:#38bdf8">
+      <span class="card-badge">Popular</span>
+      <span class="card-icon">💼</span>
+      <div class="card-title">Job Interview</div>
+      <div class="card-desc">Practice common & technical interview questions with real-time AI feedback</div>
+    </div>
+
+    <div class="scenario-card" data-scenario="emergency" style="--card-color:#f87171">
+      <span class="card-badge">Critical</span>
+      <span class="card-icon">🚨</span>
+      <div class="card-title">Emergency Situations</div>
+      <div class="card-desc">Practice crisis communication — medical, fire, and safety scenarios</div>
+    </div>
+
+    <div class="scenario-card" data-scenario="daily" style="--card-color:#34d399">
+      <span class="card-badge">Daily</span>
+      <span class="card-icon">☕</span>
+      <div class="card-title">Daily Conversations</div>
+      <div class="card-desc">Shopping, greetings, dining out, and casual social interactions</div>
+    </div>
+
+    <div class="scenario-card" data-scenario="business" style="--card-color:#818cf8">
+      <span class="card-badge">Pro</span>
+      <span class="card-icon">📊</span>
+      <div class="card-title">Business Meetings</div>
+      <div class="card-desc">Present ideas, negotiate deals, and lead professional discussions</div>
+    </div>
+
+    <div class="scenario-card" data-scenario="travel" style="--card-color:#fb923c">
+      <span class="card-badge">New</span>
+      <span class="card-icon">✈️</span>
+      <div class="card-title">Travel & Immigration</div>
+      <div class="card-desc">Airport, hotel, customs, and navigating foreign places confidently</div>
+    </div>
+
+    <div class="scenario-card" data-scenario="medical" style="--card-color:#e879f9">
+      <span class="card-badge">Health</span>
+      <span class="card-icon">🏥</span>
+      <div class="card-title">Medical Consultation</div>
+      <div class="card-desc">Describe symptoms, ask doctors questions, and understand instructions</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ─── MAIN CONSOLE ────────────────────────────────────────── -->
+<div class="console-area">
+
+  <!-- LEFT: CHAT + CONTROLS -->
+  <div class="console-main">
+
+    <!-- WAVEFORM VISUALIZER -->
+    <div class="waveform-panel">
+      <div class="waveform-title">// Voice Waveform · Live Input</div>
+      <div class="waveform-canvas-wrap">
+        <canvas id="waveform"></canvas>
+      </div>
+    </div>
+
+    <!-- CHAT PANEL -->
+    <div class="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <div>
+            <div class="chat-title">Conversation · Job Interview</div>
+            <div class="chat-subtitle" id="chatSubtitle">Scenario active · English (US)</div>
+          </div>
+        </div>
+        <div class="chat-actions">
+          <button class="icon-btn" title="Clear Chat" onclick="clearChat()">🗑</button>
+          <button class="icon-btn" title="Export">📋</button>
+          <button class="icon-btn" title="Settings">⚙️</button>
+        </div>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <!-- Initial greeting message -->
+        <div class="message ai">
+          <div class="avatar ai">🤖</div>
+          <div>
+            <div class="bubble">
+              Hello! I'm your VoiceSim AI coach. I'm ready to help you practice your <strong>Job Interview</strong> skills. 
+              Click the microphone and start speaking — or type below to begin! 🎙️
+            </div>
+            <div class="bubble-meta">VoiceSim AI · Just now</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MIC SECTION -->
+      <div style="padding:16px 20px; border-top: 1px solid var(--border); background: var(--surface2);">
+        <div class="mic-section">
+          <div class="mic-ring">
+            <button class="mic-btn" id="micBtn" title="Click to Speak">🎤</button>
+          </div>
+          <div class="mic-label" id="micLabel">Click to <span>start speaking</span></div>
+        </div>
+      </div>
+
+      <!-- TEXT INPUT -->
+      <div style="padding:14px 20px; border-top: 1px solid var(--border);">
+        <div class="speak-bar">
+          <input class="speak-input" id="textInput" type="text" placeholder="Or type your response here..."/>
+          <button class="send-btn" onclick="handleTextSend()">Send ↗</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- SESSION METRICS -->
+    <div class="info-card">
+      <div class="info-card-title">// Session Metrics</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-val" id="metricTurns">0</div>
+          <div class="metric-key">Turns Spoken</div>
+        </div>
+        <div class="metric">
+          <div class="metric-val" id="metricScore">—</div>
+          <div class="metric-key">Fluency Score</div>
+        </div>
+        <div class="metric">
+          <div class="metric-val" id="metricLang">EN</div>
+          <div class="metric-key">Language</div>
+        </div>
+        <div class="metric">
+          <div class="metric-val" id="metricTime">0:00</div>
+          <div class="metric-key">Session Time</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VOICE CONTROLS -->
+    <div class="info-card">
+      <div class="info-card-title">// Voice Controls</div>
+      <div class="voice-controls">
+        <div class="vc-row">
+          <span class="vc-label">AI Voice</span>
+          <select class="vc-select" id="voiceSelect">
+            <option value="en-US-natalie">Natalie (US)</option>
+            <option value="en-US-miles">Miles (US)</option>
+            <option value="en-GB-hazel">Hazel (UK)</option>
+            <option value="hi-IN-priya">Priya (Hindi)</option>
+            <option value="ta-IN-iniya">Iniya (Tamil)</option>
+            <option value="fr-FR-lea">Léa (French)</option>
+            <option value="de-DE-lena">Lena (German)</option>
+          </select>
+        </div>
+        <div class="vc-row">
+          <span class="vc-label">Speed</span>
+          <input class="vc-slider" type="range" id="speedSlider" min="0.7" max="1.5" step="0.1" value="1.0"/>
+        </div>
+        <div class="vc-row">
+          <span class="vc-label">Pitch</span>
+          <input class="vc-slider" type="range" id="pitchSlider" min="-10" max="10" step="1" value="0"/>
+        </div>
+        <div class="vc-row">
+          <span class="vc-label">Volume</span>
+          <input class="vc-slider" type="range" id="volSlider" min="0" max="100" step="5" value="80"/>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIPS -->
+    <div class="info-card">
+      <div class="info-card-title">// Practice Tips</div>
+      <div class="tip-list">
+        <div class="tip-item">
+          <span class="tip-icon">💡</span>
+          <div class="tip-text"><strong>Speak clearly</strong> — maintain a steady pace for better recognition accuracy</div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">🔁</span>
+          <div class="tip-text"><strong>Repeat tricky phrases</strong> — switch language mid-session to test fluency</div>
+        </div>
+        <div class="tip-item">
+          <span class="tip-icon">🎯</span>
+          <div class="tip-text"><strong>Complete 3+ turns</strong> per scenario to see your fluency score improve</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /console-area -->
+
+<!-- ─── FOOTER ──────────────────────────────────────────────── -->
+<footer>
+  Built for <span>Murf AI Hackathon 2025</span> · VoiceSim AI — Real-Time Voice Scenario Learning · Powered by <span>Murf Falcon TTS</span>
+</footer>
+
+</div><!-- /wrapper -->
+
+<!-- ─────────────────────────────────────────────────────────── -->
+<!-- ▼▼▼  JAVASCRIPT  ▼▼▼                                      -->
+<!-- ─────────────────────────────────────────────────────────── -->
+<script>
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  🔑  API CONFIGURATION — REPLACE VALUES BELOW              ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ── Anthropic Claude API Key ─────────────────────────────────
+const ANTHROPIC_API_KEY = "Bearer YOUR_API_KEY"; // ← Replace with your Anthropic key
+
+// ── Murf TTS Configuration ───────────────────────────────────
+const MURF_CONFIG = {
+  API_KEY:       "YOUR_MURF_API_KEY",                       // ← Replace with your Murf Falcon API key
+  API_ENDPOINT:  "https://api.murf.ai/v1/speech/generate", // ← Murf TTS endpoint
+  DEFAULT_VOICE: "en-US-natalie",                           // ← Default Murf voice ID
+};
+
+// ─── APP STATE ───────────────────────────────────────────────
+let state = {
+  selectedLang:     "en-US",
+  selectedScenario: "interview",
+  isListening:      false,
+  turns:            0,
+  sessionStart:     Date.now(),
+  recognition:      null,
+};
+
+// ─── SCENARIO PROMPTS ────────────────────────────────────────
+const SCENARIO_PROMPTS = {
+  interview: "You are a professional hiring manager conducting a job interview. Ask the candidate structured interview questions one at a time. Be encouraging but realistic.",
+  emergency: "You are an emergency dispatcher. Simulate realistic emergency scenarios. Ask clear, calm questions to assess the situation.",
+  daily:     "You are a native speaker helping someone practice everyday conversation. Keep it natural — shopping, greetings, restaurants, small talk.",
+  business:  "You are a business executive in a meeting. Simulate professional discussions including presentations, negotiations, and decisions.",
+  travel:    "You are a travel assistant helping someone navigate airports, hotels, and foreign places. Be helpful and realistic.",
+  medical:   "You are a doctor or receptionist. Help the user practice describing symptoms and understanding medical instructions.",
+};
+
+const SCENARIO_NAMES = {
+  interview: "Job Interview",
+  emergency: "Emergency Situations",
+  daily:     "Daily Conversations",
+  business:  "Business Meetings",
+  travel:    "Travel & Immigration",
+  medical:   "Medical Consultation",
+};
+
+// ─── LANGUAGE SELECTOR ───────────────────────────────────────
+document.querySelectorAll(".lang-chip").forEach(chip => {
+  chip.addEventListener("click", () => {
+    document.querySelectorAll(".lang-chip").forEach(c => c.classList.remove("active"));
+    chip.classList.add("active");
+    state.selectedLang = chip.dataset.lang;
+    document.getElementById("metricLang").textContent = chip.dataset.lang.split("-")[0].toUpperCase();
+    document.getElementById("chatSubtitle").textContent =
+      `Scenario active · ${chip.textContent.trim()}`;
+    if (state.recognition) state.recognition.lang = state.selectedLang;
+  });
+});
+
+// ─── SCENARIO SELECTOR ───────────────────────────────────────
+document.querySelectorAll(".scenario-card").forEach(card => {
+  card.addEventListener("click", () => {
+    document.querySelectorAll(".scenario-card").forEach(c => c.classList.remove("active"));
+    card.classList.add("active");
+    state.selectedScenario = card.dataset.scenario;
+    const name = SCENARIO_NAMES[state.selectedScenario];
+    document.querySelector(".chat-title").textContent = `Conversation · ${name}`;
+    addMessage("ai", `Switched to <strong>${name}</strong> scenario. Let's begin — speak or type your first line! 🎯`);
+  });
+});
+
+// ─── WAVEFORM VISUALIZER ─────────────────────────────────────
+const canvas  = document.getElementById("waveform");
+const ctx     = canvas.getContext("2d");
+let animId, analyser, dataArray;
+
+function resizeCanvas() {
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+}
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
+
+function drawIdle() {
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const bars = 60;
+  const barW = w / bars;
+  const t = Date.now() / 1000;
+  ctx.fillStyle = "rgba(56,189,248,0.08)";
+  for (let i = 0; i < bars; i++) {
+    const amp  = 4 + Math.sin(i * 0.4 + t * 2) * 3;
+    ctx.fillRect(i * barW + 1, h / 2 - amp / 2, barW - 2, amp);
+  }
+  animId = requestAnimationFrame(drawIdle);
+}
+drawIdle();
+
+function drawLive() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(dataArray);
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const bars = dataArray.length / 2;
+  const barW = w / bars;
+  for (let i = 0; i < bars; i++) {
+    const v    = dataArray[i] / 255;
+    const barH = v * h * 0.85;
+    const hue  = 190 + v * 60;
+    ctx.fillStyle = `hsla(${hue}, 90%, 65%, ${0.6 + v * 0.4})`;
+    ctx.fillRect(i * barW + 1, h - barH, barW - 2, barH);
+  }
+  animId = requestAnimationFrame(drawLive);
+}
+
+// ─── MICROPHONE & SPEECH RECOGNITION ────────────────────────
+const micBtn   = document.getElementById("micBtn");
+const micLabel = document.getElementById("micLabel");
+
+micBtn.addEventListener("click", toggleListening);
+
+function toggleListening() {
+  state.isListening ? stopListening() : startListening();
+}
+
+async function startListening() {
+  try {
+    const stream   = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source   = audioCtx.createMediaStreamSource(stream);
+    analyser       = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    dataArray      = new Uint8Array(analyser.frequencyBinCount);
+    source.connect(analyser);
+    cancelAnimationFrame(animId);
+    drawLive();
+  } catch (e) {
+    console.warn("Mic access denied, using idle viz");
+  }
+
+  state.isListening = true;
+  micBtn.classList.add("listening");
+  micBtn.textContent = "⏹";
+  micLabel.innerHTML = 'Listening... <span>speak now</span>';
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    addMessage("ai", "⚠️ Speech recognition not supported in this browser. Please use Chrome.");
+    stopListening();
+    return;
+  }
+
+  state.recognition = new SpeechRecognition();
+  state.recognition.lang             = state.selectedLang;
+  state.recognition.continuous       = false;
+  state.recognition.interimResults   = false;
+
+  state.recognition.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    addMessage("user", transcript);
+    stopListening();
+    getAIResponse(transcript);
+  };
+  state.recognition.onerror = () => stopListening();
+  state.recognition.onend   = () => { if (state.isListening) stopListening(); };
+  state.recognition.start();
+}
+
+function stopListening() {
+  state.isListening = false;
+  micBtn.classList.remove("listening");
+  micBtn.textContent = "🎤";
+  micLabel.innerHTML = 'Click to <span>start speaking</span>';
+  if (state.recognition) { state.recognition.stop(); state.recognition = null; }
+  cancelAnimationFrame(animId);
+  analyser = null;
+  drawIdle();
+}
+
+// ─── TEXT SEND ───────────────────────────────────────────────
+function handleTextSend() {
+  const input = document.getElementById("textInput");
+  const text  = input.value.trim();
+  if (!text) return;
+  addMessage("user", text);
+  input.value = "";
+  getAIResponse(text);
+}
+document.getElementById("textInput").addEventListener("keydown", e => {
+  if (e.key === "Enter") handleTextSend();
+});
+
+// ─── AI RESPONSE (Claude API via Anthropic) ──────────────────
+const conversationHistory = [];
+
+async function getAIResponse(userText) {
+  const typingId = showTyping();
+  state.turns++;
+  document.getElementById("metricTurns").textContent = state.turns;
+
+  const systemPrompt =
+    SCENARIO_PROMPTS[state.selectedScenario] +
+    ` The user is practicing in ${state.selectedLang}. Keep responses concise (2-4 sentences).`;
+
+  conversationHistory.push({ role: "user", content: userText });
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": ANTHROPIC_API_KEY,   // ← injected from config above
+        "anthropic-version": "2023-06-01",    // required header for Anthropic API
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model:      "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        system:     systemPrompt,
+        messages:   conversationHistory,
+      }),
+    });
+
+    const data   = await res.json();
+    const aiText = data.content?.[0]?.text || "I didn't catch that. Could you repeat?";
+    conversationHistory.push({ role: "assistant", content: aiText });
+
+    removeTyping(typingId);
+    addMessage("ai", aiText);
+    updateFluencyScore();
+
+    // ── Speak the AI response via Murf TTS ───────────────────
+    await callMurfTTS(aiText, state.selectedLang);
+
+  } catch (err) {
+    removeTyping(typingId);
+    addMessage("ai", "⚠️ Connection error. Please check your network or API key configuration.");
+    console.error("Claude API error:", err);
+  }
+}
+
+// ─── MURF TTS ────────────────────────────────────────────────
+async function callMurfTTS(text, lang) {
+  if (!MURF_CONFIG.API_KEY || MURF_CONFIG.API_KEY === "YOUR_MURF_API_KEY") {
+    console.warn("⚠️ Murf API key not configured. Voice output disabled.");
+    return;
+  }
+
+  const voiceId = document.getElementById("voiceSelect").value || MURF_CONFIG.DEFAULT_VOICE;
+  const speed   = parseFloat(document.getElementById("speedSlider").value);
+  const pitch   = parseInt(document.getElementById("pitchSlider").value);
+
+  try {
+    const res = await fetch(MURF_CONFIG.API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": MURF_CONFIG.API_KEY,   // ← injected from config above
+      },
+      body: JSON.stringify({
+        voiceId:     voiceId,
+        style:       "Conversational",
+        text:        text,
+        rate:        speed,
+        pitch:       pitch,
+        sampleRate:  48000,
+        format:      "MP3",
+        channelType: "MONO",
+      }),
+    });
+
+    const data = await res.json();
+    // Murf returns an audioFile URL — adjust field name if needed
+    const audioUrl = data.audioFile || data.audio_url || data.url;
+    if (audioUrl) {
+      const audio   = new Audio(audioUrl);
+      audio.volume  = parseInt(document.getElementById("volSlider").value) / 100;
+      audio.play();
+    }
+  } catch (err) {
+    console.error("Murf TTS error:", err);
+  }
+}
+
+// ─── CHAT HELPERS ────────────────────────────────────────────
+function addMessage(role, text) {
+  const container = document.getElementById("chatMessages");
+  const div       = document.createElement("div");
+  div.className   = `message ${role}`;
+  const time      = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  div.innerHTML   = `
+    <div class="avatar ${role}">${role === "ai" ? "🤖" : "🧑"}</div>
+    <div>
+      <div class="bubble">${text}</div>
+      <div class="bubble-meta">${role === "ai" ? "VoiceSim AI" : "You"} · ${time}</div>
+    </div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping() {
+  const container = document.getElementById("chatMessages");
+  const id        = "typing-" + Date.now();
+  const div       = document.createElement("div");
+  div.className   = "message ai";
+  div.id          = id;
+  div.innerHTML   = `
+    <div class="avatar ai">🤖</div>
+    <div><div class="bubble">
+      <div class="typing-indicator"><span></span><span></span><span></span></div>
+    </div></div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function clearChat() {
+  document.getElementById("chatMessages").innerHTML = "";
+  conversationHistory.length = 0;
+  addMessage("ai", "Chat cleared. Ready for a new session! 🎙️");
+}
+
+// ─── FLUENCY SCORE ───────────────────────────────────────────
+function updateFluencyScore() {
+  const scores = [72, 75, 78, 80, 82, 85, 87, 88, 90, 91, 92];
+  const idx    = Math.min(state.turns - 1, scores.length - 1);
+  document.getElementById("metricScore").textContent = scores[idx];
+}
+
+// ─── SESSION TIMER ───────────────────────────────────────────
+setInterval(() => {
+  const elapsed = Math.floor((Date.now() - state.sessionStart) / 1000);
+  const m = Math.floor(elapsed / 60);
+  const s = elapsed % 60;
+  document.getElementById("metricTime").textContent = `${m}:${s.toString().padStart(2, "0")}`;
+}, 1000);
+
+</script>
+
+</body>
+</html>
